@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem \"C:\\\\Users\\\\Nicoc\\\\Documents\\\\triage-mecanico\" -Recurse)",
+      "Bash(Select-Object FullName)",
+      "Bash(powershell.exe *)",
+      "Bash(cmd.exe *)",
+      "Bash(python3 *)",
+      "Bash(python *)",
+      "Bash(py --version)",
+      "Read(//usr/**)",
+      "Read(//usr/local/**)",
+      "Bash(find /usr -name \"python*\" -type f)",
+      "Bash(env *)",
+      "Bash(C:/Python/python.exe --version)",
+      "Bash(C:/Users/Nicoc/AppData/Local/Programs/Python/Python313/python.exe --version)",
+      "Bash(C:/Python/python.exe -c ' *)",
+      "PowerShell(cd \"C:\\\\Users\\\\Nicoc\\\\Documents\\\\triage-mecanico\"; python -c \"import sys; sys.path.insert\\(0, '.'\\); from src.motor import diagnosticar; print\\('Motor OK:', diagnosticar\\({'ruido':'ninguno','cuando_ruido':'ninguno','humo':'ninguno','vibracion':False,'donde_vibracion':'ninguna','temperatura':'normal','luces':'ninguna','comportamiento_freno':'normal','perdida_potencia':False,'liquido_piso':'ninguno'}\\)['diagnostico']\\)\"; \\(Get-Item app.py\\).Length)",
+      "PowerShell(streamlit run *)"
+    ]
+  }
+}

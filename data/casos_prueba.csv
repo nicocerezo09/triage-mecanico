@@ -1,0 +1,31 @@
+id,ruido,cuando_ruido,humo,vibracion,donde_vibracion,temperatura,luces,comportamiento_freno,perdida_potencia,liquido_piso,diagnostico_esperado,sistema_esperado,urgencia_esperada,seguro_manejar_esperado
+1,chirrido,al_frenar,ninguno,no,ninguna,normal,ninguna,normal,no,ninguno,Pastillas de freno desgastadas,frenos,alta,con_precaucion
+2,ninguno,ninguno,ninguno,si,pedal_de_freno,normal,ninguna,vibra,no,ninguno,Discos de freno deformados,frenos,alta,con_precaucion
+3,ninguno,ninguno,ninguno,no,ninguna,normal,ninguna,se_va_hacia_un_lado,no,ninguno,Pinza de freno trabada,frenos,critica,no
+4,ninguno,ninguno,ninguno,no,ninguna,normal,ninguna,tarda_mas,no,ninguno,Liquido de frenos bajo o contaminado,frenos,alta,con_precaucion
+5,chirrido,al_frenar,ninguno,si,pedal_de_freno,normal,ninguna,vibra,no,ninguno,Pastillas y discos en mal estado,frenos,critica,no
+6,ninguno,ninguno,azul,no,ninguna,normal,aceite,normal,si,aceite,Quema de aceite por anillos o guias,motor,moderada,con_precaucion
+7,ninguno,ninguno,blanco,no,ninguna,muy_alta,temperatura,normal,no,refrigerante,Fuga de refrigerante al motor - junta de culata,motor,critica,no
+8,ninguno,ninguno,negro,no,ninguna,normal,check_engine,normal,si,ninguno,Mezcla rica o inyectores sucios,motor,moderada,con_precaucion
+9,golpeteo,al_acelerar,ninguno,no,ninguna,normal,ninguna,normal,no,ninguno,Detonacion o problema en la combustion,motor,alta,con_precaucion
+10,golpeteo,siempre,ninguno,no,ninguna,normal,aceite,normal,si,aceite,Presion de aceite baja o cojinetes desgastados,motor,critica,no
+11,ninguno,ninguno,ninguno,no,ninguna,muy_alta,temperatura,normal,no,ninguno,Recalentamiento critico del motor,refrigeracion,critica,no
+12,ninguno,ninguno,ninguno,no,ninguna,alta,temperatura,normal,no,refrigerante,Fuga en sistema de refrigeracion,refrigeracion,alta,con_precaucion
+13,ninguno,ninguno,blanco,no,ninguna,alta,temperatura,normal,no,ninguno,Problema en radiador o tapa de expansion,refrigeracion,alta,con_precaucion
+14,ninguno,ninguno,ninguno,no,ninguna,normal,ninguna,normal,no,refrigerante,Fuga de refrigerante sin recalentamiento,refrigeracion,moderada,si
+15,ninguno,ninguno,ninguno,no,ninguna,muy_alta,temperatura,normal,si,refrigerante,Falla multiple motor-refrigeracion,refrigeracion,critica,no
+16,zumbido,al_acelerar,ninguno,no,ninguna,normal,ninguna,normal,no,ninguno,Cojinete de transmision desgastado,transmision,moderada,con_precaucion
+17,ninguno,ninguno,ninguno,no,ninguna,normal,ninguna,normal,si,ninguno,Tirones al cambiar - embrague o caja,transmision,alta,con_precaucion
+18,golpeteo,en_neutro,ninguno,no,ninguna,normal,ninguna,normal,no,ninguno,Problema interno en caja de cambios,transmision,alta,con_precaucion
+19,ninguno,ninguno,ninguno,no,ninguna,normal,ninguna,normal,no,aceite,Fuga de aceite de transmision,transmision,moderada,con_precaucion
+20,zumbido,siempre,ninguno,no,ninguna,normal,ninguna,normal,si,ninguno,Falla en diferencial o semiejes,transmision,alta,con_precaucion
+21,crujido,en_baches,ninguno,no,ninguna,normal,ninguna,normal,no,ninguno,Bujes o rotulas desgastadas,suspension,moderada,si
+22,ninguno,ninguno,ninguno,si,volante,normal,ninguna,normal,no,ninguno,Ruedas desbalanceadas o amortiguadores,suspension,baja,si
+23,ninguno,ninguno,ninguno,si,todo_el_auto,normal,ninguna,normal,no,ninguno,Falla grave en suspension,suspension,alta,con_precaucion
+24,ninguno,ninguno,ninguno,no,ninguna,normal,ninguna,se_va_hacia_un_lado,no,ninguno,Desalineacion o neumatico desinflado,suspension,moderada,con_precaucion
+25,crujido,al_girar,ninguno,si,volante,normal,ninguna,normal,no,ninguno,Rotula de direccion o junta homocinetica,suspension,alta,con_precaucion
+26,ninguno,ninguno,ninguno,no,ninguna,normal,bateria,normal,no,ninguno,Bateria debil o alternador fallando,electrico,alta,con_precaucion
+27,ninguno,ninguno,ninguno,no,ninguna,normal,check_engine,normal,si,ninguno,Falla en sensor o sistema de gestion,electrico,moderada,con_precaucion
+28,ninguno,ninguno,ninguno,no,ninguna,normal,bateria,normal,no,ninguno,Alternador no carga - riesgo de quedarse sin energia,electrico,alta,con_precaucion
+29,ninguno,ninguno,ninguno,no,ninguna,normal,aceite,normal,no,aceite,Presion de aceite baja - nivel o bomba,motor,alta,con_precaucion
+30,ninguno,ninguno,ninguno,no,ninguna,normal,ninguna,normal,no,ninguno,Sin fallas detectadas - sistema normal,ninguno,baja,si
