@@ -100,3 +100,12 @@ SISTEMA_NINGUNO = "ninguno"
 # Diagnóstico de sistema normal (sin fallas)
 # ---------------------------------------------------------------------------
 DIAGNOSTICO_SIN_FALLAS = "Sin fallas detectadas - sistema normal"
+
+# ---------------------------------------------------------------------------
+# Valores "otro" / fallback para campos opcionales
+# ---------------------------------------------------------------------------
+CUANDO_OTRO = "otro"
+LIQUIDO_AGUA = "agua"
+LIQUIDO_OTRO = "otro"
+VIBRACION_OTRO = "otro"
+LUZ_OTRO = "otro"

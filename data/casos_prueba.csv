@@ -1,7 +1,7 @@
 id,ruido,cuando_ruido,humo,vibracion,donde_vibracion,temperatura,luces,comportamiento_freno,perdida_potencia,liquido_piso,diagnostico_esperado,sistema_esperado,urgencia_esperada,seguro_manejar_esperado
 1,chirrido,al_frenar,ninguno,no,ninguna,normal,ninguna,normal,no,ninguno,Pastillas de freno desgastadas,frenos,alta,con_precaucion
 2,ninguno,ninguno,ninguno,si,pedal_de_freno,normal,ninguna,vibra,no,ninguno,Discos de freno deformados,frenos,alta,con_precaucion
-3,ninguno,ninguno,ninguno,no,ninguna,normal,ninguna,se_va_hacia_un_lado,no,ninguno,Pinza de freno trabada,frenos,critica,no
+3,ninguno,ninguno,ninguno,si,pedal_de_freno,normal,ninguna,se_va_hacia_un_lado,no,ninguno,Pinza de freno trabada,frenos,critica,no
 4,ninguno,ninguno,ninguno,no,ninguna,normal,ninguna,tarda_mas,no,ninguno,Liquido de frenos bajo o contaminado,frenos,alta,con_precaucion
 5,chirrido,al_frenar,ninguno,si,pedal_de_freno,normal,ninguna,vibra,no,ninguno,Pastillas y discos en mal estado,frenos,critica,no
 6,ninguno,ninguno,azul,no,ninguna,normal,aceite,normal,si,aceite,Quema de aceite por anillos o guias,motor,moderada,con_precaucion
@@ -26,6 +26,6 @@ id,ruido,cuando_ruido,humo,vibracion,donde_vibracion,temperatura,luces,comportam
 25,crujido,al_girar,ninguno,si,volante,normal,ninguna,normal,no,ninguno,Rotula de direccion o junta homocinetica,suspension,alta,con_precaucion
 26,ninguno,ninguno,ninguno,no,ninguna,normal,bateria,normal,no,ninguno,Bateria debil o alternador fallando,electrico,alta,con_precaucion
 27,ninguno,ninguno,ninguno,no,ninguna,normal,check_engine,normal,si,ninguno,Falla en sensor o sistema de gestion,electrico,moderada,con_precaucion
-28,ninguno,ninguno,ninguno,no,ninguna,normal,bateria,normal,no,ninguno,Alternador no carga - riesgo de quedarse sin energia,electrico,alta,con_precaucion
+28,ninguno,ninguno,ninguno,no,ninguna,normal,bateria,normal,no,ninguno,Bateria debil o alternador fallando,electrico,alta,con_precaucion
 29,ninguno,ninguno,ninguno,no,ninguna,normal,aceite,normal,no,aceite,Presion de aceite baja - nivel o bomba,motor,alta,con_precaucion
 30,ninguno,ninguno,ninguno,no,ninguna,normal,ninguna,normal,no,ninguno,Sin fallas detectadas - sistema normal,ninguno,baja,si

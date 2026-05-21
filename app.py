@@ -1,9 +1,9 @@
 """
-Interfaz Streamlit para el sistema experto de triage mecanico.
+Interfaz Streamlit para el sistema experto de triage mecánico.
 
 Estructura:
-- Sidebar: inputs organizados por sistema del auto + selector de demos
-- Panel principal: badge de urgencia, gauge Plotly, card de diagnostico,
+- Sidebar: selector de categorías de síntomas + campos condicionales por categoría
+- Panel principal: badge de urgencia, gauge Plotly, cards de diagnóstico,
   tabla de reglas disparadas
 """
 
@@ -23,7 +23,7 @@ from src.motor import diagnosticar
 # Configuracion de pagina
 # ---------------------------------------------------------------------------
 st.set_page_config(
-    page_title="Triage Mecanico",
+    page_title="Triage Mecánico",
     page_icon="🔧",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -34,12 +34,11 @@ st.set_page_config(
 # ---------------------------------------------------------------------------
 CASOS_DEMO = [
     {
-        "nombre": "Pastillas y discos (critico)",
+        "nombre": "Pastillas y discos (crítico)",
         "sintomas": {
             "ruido": "chirrido",
             "cuando_ruido": "al_frenar",
             "humo": "ninguno",
-            "vibracion": True,
             "donde_vibracion": "pedal_de_freno",
             "temperatura": "normal",
             "luces": "ninguna",
@@ -49,12 +48,11 @@ CASOS_DEMO = [
         },
     },
     {
-        "nombre": "Recalentamiento critico",
+        "nombre": "Recalentamiento crítico",
         "sintomas": {
             "ruido": "ninguno",
             "cuando_ruido": "ninguno",
             "humo": "ninguno",
-            "vibracion": False,
             "donde_vibracion": "ninguna",
             "temperatura": "muy_alta",
             "luces": "temperatura",
@@ -69,7 +67,6 @@ CASOS_DEMO = [
             "ruido": "ninguno",
             "cuando_ruido": "ninguno",
             "humo": "azul",
-            "vibracion": False,
             "donde_vibracion": "ninguna",
             "temperatura": "normal",
             "luces": "aceite",
@@ -84,7 +81,6 @@ CASOS_DEMO = [
             "ruido": "zumbido",
             "cuando_ruido": "siempre",
             "humo": "ninguno",
-            "vibracion": False,
             "donde_vibracion": "ninguna",
             "temperatura": "normal",
             "luces": "ninguna",
@@ -99,7 +95,6 @@ CASOS_DEMO = [
             "ruido": "ninguno",
             "cuando_ruido": "ninguno",
             "humo": "ninguno",
-            "vibracion": False,
             "donde_vibracion": "ninguna",
             "temperatura": "normal",
             "luces": "ninguna",
@@ -121,7 +116,7 @@ OPCIONES_RUIDO = {
     "crujido": "Crujido",
 }
 OPCIONES_CUANDO_RUIDO = {
-    "ninguno": "Ninguno",
+    "ninguno": "Otro / No especificado",
     "al_frenar": "Al frenar",
     "al_acelerar": "Al acelerar",
     "siempre": "Siempre",
@@ -144,24 +139,28 @@ OPCIONES_LUCES = {
     "ninguna": "Ninguna",
     "temperatura": "Temperatura",
     "aceite": "Aceite",
-    "bateria": "Bateria",
+    "bateria": "Batería",
     "check_engine": "Check Engine",
+    "otro": "Otra luz",
 }
 OPCIONES_LIQUIDO_PISO = {
     "ninguno": "Ninguno",
     "aceite": "Aceite",
     "refrigerante": "Refrigerante",
+    "agua": "Agua",
+    "otro": "Otro líquido",
 }
 OPCIONES_DONDE_VIBRACION = {
     "ninguna": "Ninguna",
     "volante": "Volante",
     "pedal_de_freno": "Pedal de freno",
     "todo_el_auto": "Todo el auto",
+    "otro": "Otro lugar",
 }
 OPCIONES_FRENO = {
     "normal": "Normal",
     "vibra": "Vibra",
-    "tarda_mas": "Tarda mas",
+    "tarda_mas": "Tarda más",
     "se_va_hacia_un_lado": "Se va hacia un lado",
 }
 
@@ -214,7 +213,6 @@ _DEFAULTS = {
     "ruido": "ninguno",
     "cuando_ruido": "ninguno",
     "humo": "ninguno",
-    "vibracion": False,
     "donde_vibracion": "ninguna",
     "temperatura": "normal",
     "luces": "ninguna",
@@ -223,6 +221,12 @@ _DEFAULTS = {
     "liquido_piso": "ninguno",
     "demo_index": 0,          # 0 = "— Personalizado —"
     "resultado": None,
+    # Categorias activas (flujo secuencial)
+    "cat_ruidos": False,
+    "cat_humo_temp": False,
+    "cat_visuales": False,
+    "cat_vibracion": False,
+    "cat_frenos": False,
 }
 
 for k, v in _DEFAULTS.items():
@@ -233,20 +237,48 @@ for k, v in _DEFAULTS.items():
 # ---------------------------------------------------------------------------
 # Helpers de estado
 # ---------------------------------------------------------------------------
+def _inferir_categorias(sintomas: dict) -> dict:
+    """Infiere que categorias deben activarse a partir de los valores de un caso demo.
+
+    Args:
+        sintomas: Dict de sintomas del caso demo.
+
+    Returns:
+        Dict con las claves cat_* y sus valores booleanos inferidos.
+    """
+    return {
+        "cat_ruidos": sintomas.get("ruido", "ninguno") != "ninguno",
+        "cat_humo_temp": (
+            sintomas.get("humo", "ninguno") != "ninguno"
+            or sintomas.get("temperatura", "normal") != "normal"
+        ),
+        "cat_visuales": (
+            sintomas.get("luces", "ninguna") != "ninguna"
+            or sintomas.get("perdida_potencia", False)
+            or sintomas.get("liquido_piso", "ninguno") != "ninguno"
+        ),
+        "cat_vibracion": sintomas.get("donde_vibracion", "ninguna") != "ninguna",
+        "cat_frenos": sintomas.get("comportamiento_freno", "normal") != "normal",
+    }
+
+
 def _aplicar_demo(idx: int) -> None:
-    """Carga los sintomas del caso demo en el session_state."""
+    """Carga los sintomas del caso demo en el session_state e infiere categorias."""
     caso = CASOS_DEMO[idx - 1]  # idx=0 es "Personalizado"
     for campo, valor in caso["sintomas"].items():
         st.session_state[campo] = valor
+    # Inferir y activar las categorias correspondientes
+    cats = _inferir_categorias(caso["sintomas"])
+    for k, v in cats.items():
+        st.session_state[k] = v
 
 
 def _build_sintomas() -> dict:
     """Construye el dict de sintomas a partir del session_state actual.
 
-    Aplica logica condicional para los campos dependientes: si no hay ruido,
-    fuerza cuando_ruido a "ninguno"; si no hay vibracion, fuerza
-    donde_vibracion a "ninguna". Esto evita que valores residuales de
-    sesiones anteriores contaminen el diagnostico.
+    Aplica logica condicional basada en categorias activas: si una categoria
+    no esta activa, sus campos se fuerzan a valor neutro para evitar que
+    valores residuales contaminen el diagnostico.
 
     Returns:
         Dict con las 10 claves que espera src.motor.diagnosticar:
@@ -254,21 +286,43 @@ def _build_sintomas() -> dict:
         temperatura, luces, comportamiento_freno, perdida_potencia,
         liquido_piso.
     """
-    ruido = st.session_state["ruido"]
-    vibracion = st.session_state["vibracion"]
+    cat_ruidos = st.session_state.get("cat_ruidos", False)
+    cat_humo_temp = st.session_state.get("cat_humo_temp", False)
+    cat_visuales = st.session_state.get("cat_visuales", False)
+    cat_vibracion = st.session_state.get("cat_vibracion", False)
+    cat_frenos = st.session_state.get("cat_frenos", False)
+
+    # Ruido
+    ruido = st.session_state["ruido"] if cat_ruidos else "ninguno"
+    cuando_ruido = st.session_state["cuando_ruido"] if (cat_ruidos and ruido != "ninguno") else "ninguno"
+
+    # Humo y temperatura
+    humo = st.session_state["humo"] if cat_humo_temp else "ninguno"
+    temperatura = st.session_state["temperatura"] if cat_humo_temp else "normal"
+
+    # Senales visuales
+    luces = st.session_state["luces"] if cat_visuales else "ninguna"
+    perdida_potencia = st.session_state["perdida_potencia"] if cat_visuales else False
+    liquido_piso = st.session_state["liquido_piso"] if cat_visuales else "ninguno"
+
+    # Vibracion (calculada desde donde_vibracion)
+    donde_vibracion = st.session_state["donde_vibracion"] if cat_vibracion else "ninguna"
+    vibracion = donde_vibracion != "ninguna"
+
+    # Frenos
+    comportamiento_freno = st.session_state["comportamiento_freno"] if cat_frenos else "normal"
+
     return {
         "ruido": ruido,
-        # Si el ruido es ninguno, el campo condicional no aplica
-        "cuando_ruido": st.session_state["cuando_ruido"] if ruido != "ninguno" else "ninguno",
-        "humo": st.session_state["humo"],
+        "cuando_ruido": cuando_ruido,
+        "humo": humo,
         "vibracion": vibracion,
-        # Si no hay vibracion, el campo condicional no aplica
-        "donde_vibracion": st.session_state["donde_vibracion"] if vibracion else "ninguna",
-        "temperatura": st.session_state["temperatura"],
-        "luces": st.session_state["luces"],
-        "comportamiento_freno": st.session_state["comportamiento_freno"],
-        "perdida_potencia": st.session_state["perdida_potencia"],
-        "liquido_piso": st.session_state["liquido_piso"],
+        "donde_vibracion": donde_vibracion,
+        "temperatura": temperatura,
+        "luces": luces,
+        "comportamiento_freno": comportamiento_freno,
+        "perdida_potencia": perdida_potencia,
+        "liquido_piso": liquido_piso,
     }
 
 
@@ -276,8 +330,8 @@ def _build_sintomas() -> dict:
 # Sidebar
 # ---------------------------------------------------------------------------
 with st.sidebar:
-    st.title("Triage Mecanico")
-    st.caption("Sistema experto de diagnostico de fallas en vehiculos")
+    st.title("Triage Mecánico")
+    st.caption("Sistema experto de diagnóstico de fallas en vehículos")
 
     st.divider()
 
@@ -289,7 +343,7 @@ with st.sidebar:
         format_func=lambda i: nombres_demo[i],
         index=st.session_state["demo_index"],
         key="_demo_sel_widget",
-        help="Selecciona un caso precargado para rellenar los campos automaticamente.",
+        help="Seleccioná un caso precargado para rellenar los campos automáticamente.",
     )
 
     if demo_sel != st.session_state["demo_index"]:
@@ -300,110 +354,135 @@ with st.sidebar:
 
     st.divider()
 
-    # ---- Seccion: Ruidos ----
-    st.subheader("Ruidos")
+    # ---- Seleccion de categorias de sintomas ----
+    st.markdown("**¿Qué síntomas detecta?**")
+    st.caption("Seleccioná todas las que apliquen.")
 
-    ruido_val = st.selectbox(
-        "Tipo de ruido",
-        options=_keys(OPCIONES_RUIDO),
-        format_func=lambda v: OPCIONES_RUIDO[v],
-        index=_index_of(OPCIONES_RUIDO, st.session_state["ruido"]),
-        key="ruido",
+    cat_ruidos = st.checkbox(
+        "Ruidos",
+        value=st.session_state["cat_ruidos"],
+        key="cat_ruidos",
+    )
+    cat_humo_temp = st.checkbox(
+        "Humo / Temperatura",
+        value=st.session_state["cat_humo_temp"],
+        key="cat_humo_temp",
+    )
+    cat_visuales = st.checkbox(
+        "Señales visuales",
+        value=st.session_state["cat_visuales"],
+        key="cat_visuales",
+    )
+    cat_vibracion = st.checkbox(
+        "Vibración",
+        value=st.session_state["cat_vibracion"],
+        key="cat_vibracion",
+    )
+    cat_frenos = st.checkbox(
+        "Frenos",
+        value=st.session_state["cat_frenos"],
+        key="cat_frenos",
     )
 
-    ruido_activo = st.session_state["ruido"] != "ninguno"
-    cuando_ruido_val = st.selectbox(
-        "Cuando ocurre el ruido",
-        options=_keys(OPCIONES_CUANDO_RUIDO),
-        format_func=lambda v: OPCIONES_CUANDO_RUIDO[v],
-        index=_index_of(OPCIONES_CUANDO_RUIDO, st.session_state["cuando_ruido"]),
-        key="cuando_ruido",
-        disabled=not ruido_activo,
-        help="Solo disponible cuando hay un ruido seleccionado.",
-    )
+    # ---- Campos condicionales por categoria ----
 
-    st.divider()
+    # -- Ruidos --
+    if st.session_state["cat_ruidos"]:
+        st.divider()
+        st.subheader("Ruidos")
 
-    # ---- Seccion: Humo y temperatura ----
-    st.subheader("Humo y temperatura")
+        st.selectbox(
+            "Tipo de ruido",
+            options=_keys(OPCIONES_RUIDO),
+            format_func=lambda v: OPCIONES_RUIDO[v],
+            index=_index_of(OPCIONES_RUIDO, st.session_state["ruido"]),
+            key="ruido",
+        )
 
-    st.selectbox(
-        "Color del humo",
-        options=_keys(OPCIONES_HUMO),
-        format_func=lambda v: OPCIONES_HUMO[v],
-        index=_index_of(OPCIONES_HUMO, st.session_state["humo"]),
-        key="humo",
-    )
+        ruido_activo = st.session_state["ruido"] != "ninguno"
+        st.selectbox(
+            "Cuándo ocurre el ruido",
+            options=_keys(OPCIONES_CUANDO_RUIDO),
+            format_func=lambda v: OPCIONES_CUANDO_RUIDO[v],
+            index=_index_of(OPCIONES_CUANDO_RUIDO, st.session_state["cuando_ruido"]),
+            key="cuando_ruido",
+            disabled=not ruido_activo,
+            help="Solo disponible cuando hay un ruido seleccionado.",
+        )
 
-    st.selectbox(
-        "Temperatura del motor",
-        options=_keys(OPCIONES_TEMPERATURA),
-        format_func=lambda v: OPCIONES_TEMPERATURA[v],
-        index=_index_of(OPCIONES_TEMPERATURA, st.session_state["temperatura"]),
-        key="temperatura",
-    )
+    # -- Humo y temperatura --
+    if st.session_state["cat_humo_temp"]:
+        st.divider()
+        st.subheader("Humo y temperatura")
 
-    st.divider()
+        st.selectbox(
+            "Color del humo",
+            options=_keys(OPCIONES_HUMO),
+            format_func=lambda v: OPCIONES_HUMO[v],
+            index=_index_of(OPCIONES_HUMO, st.session_state["humo"]),
+            key="humo",
+        )
 
-    # ---- Seccion: Senales visuales ----
-    st.subheader("Senales visuales")
+        st.selectbox(
+            "Temperatura del motor",
+            options=_keys(OPCIONES_TEMPERATURA),
+            format_func=lambda v: OPCIONES_TEMPERATURA[v],
+            index=_index_of(OPCIONES_TEMPERATURA, st.session_state["temperatura"]),
+            key="temperatura",
+        )
 
-    st.selectbox(
-        "Luz de advertencia encendida",
-        options=_keys(OPCIONES_LUCES),
-        format_func=lambda v: OPCIONES_LUCES[v],
-        index=_index_of(OPCIONES_LUCES, st.session_state["luces"]),
-        key="luces",
-    )
+    # -- Senales visuales --
+    if st.session_state["cat_visuales"]:
+        st.divider()
+        st.subheader("Señales visuales")
 
-    st.checkbox(
-        "Perdida de potencia",
-        value=st.session_state["perdida_potencia"],
-        key="perdida_potencia",
-    )
+        st.selectbox(
+            "Luz de advertencia encendida",
+            options=_keys(OPCIONES_LUCES),
+            format_func=lambda v: OPCIONES_LUCES[v],
+            index=_index_of(OPCIONES_LUCES, st.session_state["luces"]),
+            key="luces",
+        )
 
-    st.selectbox(
-        "Liquido en el piso",
-        options=_keys(OPCIONES_LIQUIDO_PISO),
-        format_func=lambda v: OPCIONES_LIQUIDO_PISO[v],
-        index=_index_of(OPCIONES_LIQUIDO_PISO, st.session_state["liquido_piso"]),
-        key="liquido_piso",
-    )
+        st.checkbox(
+            "Pérdida de potencia",
+            value=st.session_state["perdida_potencia"],
+            key="perdida_potencia",
+        )
 
-    st.divider()
+        st.selectbox(
+            "Líquido en el piso",
+            options=_keys(OPCIONES_LIQUIDO_PISO),
+            format_func=lambda v: OPCIONES_LIQUIDO_PISO[v],
+            index=_index_of(OPCIONES_LIQUIDO_PISO, st.session_state["liquido_piso"]),
+            key="liquido_piso",
+        )
 
-    # ---- Seccion: Vibracion ----
-    st.subheader("Vibracion")
+    # -- Vibracion --
+    if st.session_state["cat_vibracion"]:
+        st.divider()
+        st.subheader("Vibración")
 
-    st.checkbox(
-        "Hay vibracion",
-        value=st.session_state["vibracion"],
-        key="vibracion",
-    )
+        st.selectbox(
+            "Dónde se siente la vibración",
+            options=_keys(OPCIONES_DONDE_VIBRACION),
+            format_func=lambda v: OPCIONES_DONDE_VIBRACION[v],
+            index=_index_of(OPCIONES_DONDE_VIBRACION, st.session_state["donde_vibracion"]),
+            key="donde_vibracion",
+        )
 
-    vibracion_activa = st.session_state["vibracion"]
-    st.selectbox(
-        "Donde se siente la vibracion",
-        options=_keys(OPCIONES_DONDE_VIBRACION),
-        format_func=lambda v: OPCIONES_DONDE_VIBRACION[v],
-        index=_index_of(OPCIONES_DONDE_VIBRACION, st.session_state["donde_vibracion"]),
-        key="donde_vibracion",
-        disabled=not vibracion_activa,
-        help="Solo disponible cuando hay vibracion.",
-    )
+    # -- Frenos --
+    if st.session_state["cat_frenos"]:
+        st.divider()
+        st.subheader("Frenos")
 
-    st.divider()
-
-    # ---- Seccion: Frenos ----
-    st.subheader("Frenos")
-
-    st.selectbox(
-        "Comportamiento del freno",
-        options=_keys(OPCIONES_FRENO),
-        format_func=lambda v: OPCIONES_FRENO[v],
-        index=_index_of(OPCIONES_FRENO, st.session_state["comportamiento_freno"]),
-        key="comportamiento_freno",
-    )
+        st.selectbox(
+            "Comportamiento del freno",
+            options=_keys(OPCIONES_FRENO),
+            format_func=lambda v: OPCIONES_FRENO[v],
+            index=_index_of(OPCIONES_FRENO, st.session_state["comportamiento_freno"]),
+            key="comportamiento_freno",
+        )
 
     st.divider()
 
@@ -424,15 +503,15 @@ if diagnosticar_btn or (st.session_state["demo_index"] > 0 and st.session_state.
 # ---------------------------------------------------------------------------
 # Panel principal
 # ---------------------------------------------------------------------------
-st.title("Diagnostico del Vehiculo")
+st.title("Diagnóstico del Vehículo")
 
 resultado = st.session_state.get("resultado")
 
 if resultado is None:
     # Estado inicial: instrucciones
     st.info(
-        "Configure los sintomas en el panel lateral y presione **Diagnosticar**, "
-        "o seleccione un **caso demo** para ver un ejemplo precargado.",
+        "Seleccioná los síntomas en el panel lateral y presioná **Diagnosticar**, "
+        "o elegí un **caso demo** para ver un ejemplo.",
         icon="ℹ️",
     )
     st.stop()
@@ -441,7 +520,7 @@ if resultado is None:
 # Mapa de urgencia
 # ---------------------------------------------------------------------------
 _URGENCIA_CONFIG = {
-    "critica":  {"color": "#e74c3c", "label": "CRITICA",  "valor": 87, "texto": "Critica"},
+    "critica":  {"color": "#e74c3c", "label": "CRÍTICA",  "valor": 87, "texto": "Crítica"},
     "alta":     {"color": "#e67e22", "label": "ALTA",     "valor": 62, "texto": "Alta"},
     "moderada": {"color": "#f1c40f", "label": "MODERADA", "valor": 37, "texto": "Moderada"},
     "baja":     {"color": "#2ecc71", "label": "BAJA",     "valor": 12, "texto": "Baja"},
@@ -451,7 +530,7 @@ urgencia = resultado.get("urgencia", "baja")
 cfg = _URGENCIA_CONFIG.get(urgencia, _URGENCIA_CONFIG["baja"])
 
 # ---------------------------------------------------------------------------
-# Fila 1: Badge + Gauge
+# Fila 1: Badge + Gauge (compacta, sin scroll)
 # ---------------------------------------------------------------------------
 col_badge, col_gauge = st.columns([1, 2], gap="large")
 
@@ -506,7 +585,7 @@ with col_gauge:
         )
     )
     gauge_fig.update_layout(
-        height=280,
+        height=200,
         margin={"t": 40, "b": 10, "l": 30, "r": 30},
         paper_bgcolor="rgba(0,0,0,0)",
         font={"color": "#333"},
@@ -514,9 +593,10 @@ with col_gauge:
     st.plotly_chart(gauge_fig, use_container_width=True)
 
 # ---------------------------------------------------------------------------
-# Fila 2: Card de diagnostico
+# Fila 2: 4 cards en una sola fila
 # ---------------------------------------------------------------------------
 st.divider()
+st.subheader("Resultado del diagnóstico")
 
 seguro_manejar = resultado.get("seguro_manejar", "si")
 _SEGURO_ICONO = {
@@ -525,8 +605,8 @@ _SEGURO_ICONO = {
     "no": "🚫",
 }
 _SEGURO_TEXTO = {
-    "si": "Si, puede manejar",
-    "con_precaucion": "Con precaucion",
+    "si": "Sí, puede manejar",
+    "con_precaucion": "Con precaución",
     "no": "No debe manejar",
 }
 icono_seguro = _SEGURO_ICONO.get(seguro_manejar, "✅")
@@ -536,87 +616,73 @@ sistema = resultado.get("sistema", "ninguno").capitalize()
 diagnostico_texto = resultado.get("diagnostico", "")
 accion_texto = resultado.get("accion", "")
 
-st.subheader("Resultado del diagnostico")
+col1, col2, col3, col4 = st.columns(4, gap="medium")
 
-col_info1, col_info2 = st.columns(2, gap="large")
+_card_style = f"""
+    background-color: #f8f9fa;
+    border-left: 5px solid {cfg['color']};
+    border-radius: 8px;
+    padding: 1rem 1.1rem;
+    height: 100%;
+"""
 
-with col_info1:
+with col1:
     st.markdown(
         f"""
-        <div style="
-            background-color: #f8f9fa;
-            border-left: 5px solid {cfg['color']};
-            border-radius: 8px;
-            padding: 1.2rem 1.4rem;
-            margin-bottom: 0.5rem;
-        ">
-            <p style="margin:0 0 0.4rem 0; font-size:0.8rem; color:#666; text-transform:uppercase; letter-spacing:0.05em;">Sistema afectado</p>
-            <p style="margin:0; font-size:1.3rem; font-weight:700; color:#222;">{sistema}</p>
-        </div>
-        <div style="
-            background-color: #f8f9fa;
-            border-left: 5px solid {cfg['color']};
-            border-radius: 8px;
-            padding: 1.2rem 1.4rem;
-        ">
-            <p style="margin:0 0 0.4rem 0; font-size:0.8rem; color:#666; text-transform:uppercase; letter-spacing:0.05em;">Diagnostico</p>
-            <p style="margin:0; font-size:1.15rem; font-weight:600; color:#222;">{diagnostico_texto}</p>
+        <div style="{_card_style}">
+            <p style="margin:0 0 0.3rem 0; font-size:0.75rem; color:#666; text-transform:uppercase; letter-spacing:0.05em;">Sistema afectado</p>
+            <p style="margin:0; font-size:1.15rem; font-weight:700; color:#222;">{sistema}</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-with col_info2:
+with col2:
     st.markdown(
         f"""
-        <div style="
-            background-color: #f8f9fa;
-            border-left: 5px solid {cfg['color']};
-            border-radius: 8px;
-            padding: 1.2rem 1.4rem;
-            margin-bottom: 0.5rem;
-        ">
-            <p style="margin:0 0 0.4rem 0; font-size:0.8rem; color:#666; text-transform:uppercase; letter-spacing:0.05em;">Seguro para manejar</p>
-            <p style="margin:0; font-size:1.3rem; font-weight:700; color:#222;">{icono_seguro} {texto_seguro}</p>
+        <div style="{_card_style}">
+            <p style="margin:0 0 0.3rem 0; font-size:0.75rem; color:#666; text-transform:uppercase; letter-spacing:0.05em;">Diagnóstico</p>
+            <p style="margin:0; font-size:1rem; font-weight:600; color:#222;">{diagnostico_texto}</p>
         </div>
-        <div style="
-            background-color: #f8f9fa;
-            border-left: 5px solid {cfg['color']};
-            border-radius: 8px;
-            padding: 1.2rem 1.4rem;
-        ">
-            <p style="margin:0 0 0.4rem 0; font-size:0.8rem; color:#666; text-transform:uppercase; letter-spacing:0.05em;">Accion recomendada</p>
-            <p style="margin:0; font-size:1.0rem; color:#333;">{accion_texto}</p>
+        """,
+        unsafe_allow_html=True,
+    )
+
+with col3:
+    st.markdown(
+        f"""
+        <div style="{_card_style}">
+            <p style="margin:0 0 0.3rem 0; font-size:0.75rem; color:#666; text-transform:uppercase; letter-spacing:0.05em;">Seguro para manejar</p>
+            <p style="margin:0; font-size:1.1rem; font-weight:700; color:#222;">{icono_seguro} {texto_seguro}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+with col4:
+    st.markdown(
+        f"""
+        <div style="{_card_style}">
+            <p style="margin:0 0 0.3rem 0; font-size:0.75rem; color:#666; text-transform:uppercase; letter-spacing:0.05em;">Acción recomendada</p>
+            <p style="margin:0; font-size:0.9rem; color:#333;">{accion_texto}</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
 # ---------------------------------------------------------------------------
-# Fila 3: Tabla de reglas disparadas
+# Fila 3: Tabla de reglas disparadas (sin columna N°)
 # ---------------------------------------------------------------------------
 st.divider()
-st.subheader("Trazabilidad — Reglas disparadas")
+st.subheader("Reglas que se dispararon")
 
 reglas = resultado.get("reglas_disparadas", [])
 
 if reglas:
-    df_reglas = pd.DataFrame(
-        {
-            "N°": range(1, len(reglas) + 1),
-            "Regla disparada": reglas,
-            "Modulo": [r.split(".")[0].capitalize() if "." in r else r for r in reglas],
-        }
-    )
-    st.dataframe(
-        df_reglas,
-        use_container_width=True,
-        hide_index=True,
-        column_config={
-            "N°": st.column_config.NumberColumn(width="small"),
-            "Regla disparada": st.column_config.TextColumn(width="large"),
-            "Modulo": st.column_config.TextColumn(width="medium"),
-        },
-    )
+    df_reglas = pd.DataFrame({
+        "Regla": reglas,
+        "Sistema": [r.split(".")[0].capitalize() if "." in r else r for r in reglas],
+    })
+    st.dataframe(df_reglas, use_container_width=True, hide_index=True)
 else:
-    st.info("No se dispararon reglas especificas — el vehiculo esta en condiciones normales.", icon="✅")
+    st.info("No se dispararon reglas específicas — el vehículo está en condiciones normales.", icon="✅")
