@@ -679,9 +679,23 @@ st.subheader("Reglas que se dispararon")
 reglas = resultado.get("reglas_disparadas", [])
 
 if reglas:
+    from src.motor import _RESULTADOS
+    _URGENCIA_LABEL = {
+        "critica": "🔴 Crítica",
+        "alta": "🟠 Alta",
+        "moderada": "🟡 Moderada",
+        "baja": "🟢 Baja",
+    }
     df_reglas = pd.DataFrame({
         "Regla": reglas,
         "Sistema": [r.split(".")[0].capitalize() if "." in r else r for r in reglas],
+        "Diagnóstico asociado": [
+            _RESULTADOS.get(r, {}).get("diagnostico", r) for r in reglas
+        ],
+        "Urgencia": [
+            _URGENCIA_LABEL.get(_RESULTADOS.get(r, {}).get("urgencia", "baja"), "🟢 Baja")
+            for r in reglas
+        ],
     })
     st.dataframe(df_reglas, use_container_width=True, hide_index=True)
 else:

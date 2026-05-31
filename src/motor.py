@@ -9,6 +9,13 @@ Fuzzy scoring: si el engine no produce ningun Diagnostico, se aplica
 scoring sobre DEFINICION_REGLAS. Toda regla que alcance >= 70% de sus
 condiciones satisfechas es candidata; gana la de mayor urgencia y, en
 empate, la de mayor confianza.
+
+Logica de sintomas visuales (luces):
+  Las luces del tablero son opcionales: si el usuario no las reporta
+  (luces="ninguna"), esa condicion se excluye del denominador en el
+  calculo de confianza y no bloquea el disparo de ninguna regla.
+  Esto modela el caso real donde el foco del tablero puede estar
+  quemado aunque la falla exista.
 """
 
 # ---------------------------------------------------------------------------
@@ -76,6 +83,14 @@ _PESO_URGENCIA = {
     URGENCIA_MODERADA: 2,
     URGENCIA_BAJA: 1,
 }
+
+# ---------------------------------------------------------------------------
+# Campos opcionales: si el usuario no los reporta (valor neutro), no cuentan
+# ni como condicion cumplida ni como condicion fallida. Esto modela la
+# posibilidad de que el usuario no note un indicador visual del tablero.
+# ---------------------------------------------------------------------------
+_CAMPOS_OPCIONALES: set[str] = {"luces"}
+_NEUTRO_OPCIONAL: dict[str, object] = {"luces": "ninguna"}
 
 # ---------------------------------------------------------------------------
 # Catalogo de resultados de diagnostico por nombre de regla
@@ -390,10 +405,12 @@ _RESULTADOS: dict[str, dict] = {
 }
 
 # ---------------------------------------------------------------------------
-# Definicion de condiciones por regla (usado por el fuzzy scoring).
-# Cada condicion es una tupla (campo, valor_esperado) o (campo, True/False)
-# para booleans. El porcentaje de match se calcula sobre el total de
-# condiciones definidas para la regla.
+# Definicion de condiciones por regla (usado por fuzzy scoring y compatibilidad).
+# Cada condicion es una tupla (campo, valor_esperado).
+#
+# Las condiciones del campo "luces" son OPCIONALES: si el usuario reporta
+# luces="ninguna", esa condicion se excluye del denominador de confianza y
+# no impide que la regla sea considerada compatible.
 # ---------------------------------------------------------------------------
 _DEFINICION_REGLAS: dict[str, list[tuple]] = {
     # FRENOS
@@ -424,33 +441,33 @@ _DEFINICION_REGLAS: dict[str, list[tuple]] = {
     "motor.presion_aceite_cojinetes": [
         ("ruido", RUIDO_GOLPETEO),
         ("cuando_ruido", CUANDO_SIEMPRE),
-        ("luces", LUZ_ACEITE),
         ("perdida_potencia", True),
         ("liquido_piso", LIQUIDO_ACEITE),
+        ("luces", LUZ_ACEITE),           # opcional: confirma pero no bloquea
     ],
     "motor.junta_culata": [
         ("humo", HUMO_BLANCO),
         ("temperatura", TEMP_MUY_ALTA),
-        ("luces", LUZ_TEMPERATURA),
         ("liquido_piso", LIQUIDO_REFRIGERANTE),
+        ("luces", LUZ_TEMPERATURA),      # opcional
     ],
     "motor.quema_aceite": [
         ("humo", HUMO_AZUL),
-        ("luces", LUZ_ACEITE),
         ("perdida_potencia", True),
         ("liquido_piso", LIQUIDO_ACEITE),
+        ("luces", LUZ_ACEITE),           # opcional
     ],
     "motor.mezcla_rica": [
         ("humo", HUMO_NEGRO),
-        ("luces", LUZ_CHECK_ENGINE),
         ("perdida_potencia", True),
+        ("luces", LUZ_CHECK_ENGINE),     # opcional
     ],
     "motor.detonacion": [
         ("ruido", RUIDO_GOLPETEO),
         ("cuando_ruido", CUANDO_AL_ACELERAR),
     ],
     "motor.luz_aceite_sola": [
-        ("luces", LUZ_ACEITE),
+        ("luces", LUZ_ACEITE),           # premisa principal: la luz ES el sintoma
         ("liquido_piso", LIQUIDO_ACEITE),
     ],
     "motor.humo_azul_solo": [
@@ -462,18 +479,18 @@ _DEFINICION_REGLAS: dict[str, list[tuple]] = {
     # REFRIGERACION
     "refrigeracion.falla_multiple": [
         ("temperatura", TEMP_MUY_ALTA),
-        ("luces", LUZ_TEMPERATURA),
         ("perdida_potencia", True),
         ("liquido_piso", LIQUIDO_REFRIGERANTE),
+        ("luces", LUZ_TEMPERATURA),      # opcional
     ],
     "refrigeracion.recalentamiento_critico": [
         ("temperatura", TEMP_MUY_ALTA),
-        ("luces", LUZ_TEMPERATURA),
+        ("luces", LUZ_TEMPERATURA),      # opcional: el foco puede estar quemado
     ],
     "refrigeracion.fuga_con_recalentamiento": [
         ("temperatura", TEMP_ALTA),
-        ("luces", LUZ_TEMPERATURA),
         ("liquido_piso", LIQUIDO_REFRIGERANTE),
+        ("luces", LUZ_TEMPERATURA),      # opcional
     ],
     "refrigeracion.radiador_tapa": [
         ("humo", HUMO_BLANCO),
@@ -524,10 +541,10 @@ _DEFINICION_REGLAS: dict[str, list[tuple]] = {
     ],
     # ELECTRICO
     "electrico.bateria_alternador": [
-        ("luces", LUZ_BATERIA),
+        ("luces", LUZ_BATERIA),          # premisa principal
     ],
     "electrico.sensor_gestion": [
-        ("luces", LUZ_CHECK_ENGINE),
+        ("luces", LUZ_CHECK_ENGINE),     # premisa principal
         ("perdida_potencia", True),
     ],
 }
@@ -550,16 +567,6 @@ _DIAGNOSTICO_NORMAL: dict = {
 # ===========================================================================
 
 def _construir_resultado(nombre_regla: str, reglas_disparadas: list[str]) -> dict:
-    """Ensambla el dict de retorno combinando catalogo y lista de reglas.
-
-    Args:
-        nombre_regla: Clave en _RESULTADOS que identifica la regla ganadora.
-        reglas_disparadas: Lista de nombres de reglas activadas durante la sesion.
-
-    Returns:
-        Dict completo con diagnostico, urgencia, seguro_manejar, accion,
-        reglas_disparadas y sistema.
-    """
     base = _RESULTADOS[nombre_regla]
     return {
         "diagnostico": base["diagnostico"],
@@ -584,10 +591,10 @@ if _EXPERTA_DISPONIBLE:
     class TriageEngine(KnowledgeEngine):
         """Motor de inferencia de triage mecanico basado en experta.
 
-        Cada metodo decorado con @Rule codifica una regla de diagnostico.
-        La salience determina el orden de disparo: mayor salience = mayor
-        prioridad. El engine detiene la evaluacion en cuanto declara un
-        _Diagnostico (agenda se vacia para esa regla).
+        Las reglas de motor/refrigeracion NO incluyen la condicion de luces:
+        si el conductor no nota la luz (foco quemado) el engine igual dispara
+        basandose en los sintomas fisicos. Las reglas electricas si requieren
+        la luz porque esta ES el sintoma principal.
         """
 
         # ----------------------------------------------------------------
@@ -649,31 +656,30 @@ if _EXPERTA_DISPONIBLE:
 
         # ----------------------------------------------------------------
         # MOTOR / COMBUSTION  (salience 58-99)
+        # Las reglas de motor NO requieren luces: el foco puede estar quemado
         # ----------------------------------------------------------------
 
         @Rule(
             _Sintoma(ruido=RUIDO_GOLPETEO,
                      cuando_ruido=CUANDO_SIEMPRE,
-                     luces=LUZ_ACEITE,
                      perdida_potencia=True,
                      liquido_piso=LIQUIDO_ACEITE),
             NOT(_Diagnostico()),
             salience=99,
         )
         def motor_presion_aceite_cojinetes(self):
-            """Golpeteo constante + luz aceite + perdida potencia + aceite en piso: cojinetes."""
+            """Golpeteo constante + perdida potencia + aceite en piso: cojinetes."""
             self.declare(_Diagnostico(nombre="motor.presion_aceite_cojinetes"))
 
         @Rule(
             _Sintoma(humo=HUMO_BLANCO,
                      temperatura=TEMP_MUY_ALTA,
-                     luces=LUZ_TEMPERATURA,
                      liquido_piso=LIQUIDO_REFRIGERANTE),
             NOT(_Diagnostico()),
             salience=98,
         )
         def motor_junta_culata(self):
-            """Humo blanco + temp muy alta + luz temp + refrigerante en piso: junta culata."""
+            """Humo blanco + temp muy alta + refrigerante en piso: junta culata."""
             self.declare(_Diagnostico(nombre="motor.junta_culata"))
 
         @Rule(
@@ -687,6 +693,17 @@ if _EXPERTA_DISPONIBLE:
             self.declare(_Diagnostico(nombre="motor.detonacion"))
 
         @Rule(
+            _Sintoma(humo=HUMO_AZUL,
+                     perdida_potencia=True,
+                     liquido_piso=LIQUIDO_ACEITE),
+            NOT(_Diagnostico()),
+            salience=81,
+        )
+        def motor_quema_aceite(self):
+            """Humo azul + perdida potencia + aceite en piso: quema de aceite."""
+            self.declare(_Diagnostico(nombre="motor.quema_aceite"))
+
+        @Rule(
             _Sintoma(luces=LUZ_ACEITE,
                      liquido_piso=LIQUIDO_ACEITE),
             NOT(_Diagnostico()),
@@ -697,30 +714,13 @@ if _EXPERTA_DISPONIBLE:
             self.declare(_Diagnostico(nombre="motor.luz_aceite_sola"))
 
         @Rule(
-            _Sintoma(humo=HUMO_AZUL,
-                     luces=LUZ_ACEITE,
-                     perdida_potencia=True,
-                     liquido_piso=LIQUIDO_ACEITE),
-            NOT(_Diagnostico()),
-            salience=81,
-        )
-        def motor_quema_aceite(self):
-            """Humo azul + luz aceite + perdida potencia + aceite en piso: quema de aceite.
-
-            salience=81 (> motor.luz_aceite_sola=79) porque tiene 4 condiciones
-            especificas contra 2: regla mas especifica gana sobre la generica.
-            """
-            self.declare(_Diagnostico(nombre="motor.quema_aceite"))
-
-        @Rule(
             _Sintoma(humo=HUMO_NEGRO,
-                     luces=LUZ_CHECK_ENGINE,
                      perdida_potencia=True),
             NOT(_Diagnostico()),
             salience=76,
         )
         def motor_mezcla_rica(self):
-            """Humo negro + check engine + perdida potencia: mezcla rica / inyectores."""
+            """Humo negro + perdida potencia: mezcla rica / inyectores."""
             self.declare(_Diagnostico(nombre="motor.mezcla_rica"))
 
         @Rule(
@@ -743,39 +743,40 @@ if _EXPERTA_DISPONIBLE:
 
         # ----------------------------------------------------------------
         # REFRIGERACION  (salience 70-97)
+        # Las reglas de refrigeracion NO requieren luces como condicion.
         # ----------------------------------------------------------------
 
         @Rule(
             _Sintoma(temperatura=TEMP_MUY_ALTA,
-                     luces=LUZ_TEMPERATURA,
                      perdida_potencia=True,
                      liquido_piso=LIQUIDO_REFRIGERANTE),
             NOT(_Diagnostico()),
             salience=97,
         )
         def refrigeracion_falla_multiple(self):
-            """Temp muy alta + luz temp + perdida potencia + refrigerante en piso: falla multiple."""
+            """Temp muy alta + perdida potencia + refrigerante en piso: falla multiple."""
             self.declare(_Diagnostico(nombre="refrigeracion.falla_multiple"))
 
         @Rule(
-            _Sintoma(temperatura=TEMP_MUY_ALTA,
-                     luces=LUZ_TEMPERATURA),
+            _Sintoma(temperatura=TEMP_MUY_ALTA),
             NOT(_Diagnostico()),
             salience=93,
         )
         def refrigeracion_recalentamiento_critico(self):
-            """Temp muy alta + luz temperatura: recalentamiento critico."""
+            """Temp muy alta (sola): recalentamiento critico.
+
+            No requiere luz de temperatura: el foco puede estar quemado.
+            """
             self.declare(_Diagnostico(nombre="refrigeracion.recalentamiento_critico"))
 
         @Rule(
             _Sintoma(temperatura=TEMP_ALTA,
-                     luces=LUZ_TEMPERATURA,
                      liquido_piso=LIQUIDO_REFRIGERANTE),
             NOT(_Diagnostico()),
             salience=84,
         )
         def refrigeracion_fuga_con_recalentamiento(self):
-            """Temp alta + luz temp + refrigerante en piso: fuga con recalentamiento."""
+            """Temp alta + refrigerante en piso: fuga con recalentamiento."""
             self.declare(_Diagnostico(nombre="refrigeracion.fuga_con_recalentamiento"))
 
         @Rule(
@@ -904,7 +905,8 @@ if _EXPERTA_DISPONIBLE:
             self.declare(_Diagnostico(nombre="suspension.desalineacion"))
 
         # ----------------------------------------------------------------
-        # ELECTRICO  (salience 45-60)
+        # ELECTRICO  (salience 45-65)
+        # Las reglas electricas SI requieren la luz porque es la premisa.
         # ----------------------------------------------------------------
 
         @Rule(
@@ -928,36 +930,98 @@ if _EXPERTA_DISPONIBLE:
 
 
 # ===========================================================================
+# COMPATIBILIDAD: encuentra todas las reglas cuyas condiciones son satisfechas
+# ===========================================================================
+
+def _encontrar_compatibles(sintomas: dict) -> list[str]:
+    """Retorna todas las reglas cuyos sintomas requeridos coinciden con el caso.
+
+    Logica para campos opcionales (luces):
+    - Si la regla tiene al menos UNA condicion no-opcional, las condiciones
+      opcionales con valor neutro se omiten del chequeo (el foco puede estar
+      quemado aunque la falla exista).
+    - Si la regla tiene SOLO condiciones opcionales (ej: electrico.bateria_alternador
+      cuya unica condicion es luces=bateria), se evaluan normalmente: se requiere
+      que la luz este efectivamente encendida porque es la unica evidencia disponible.
+
+    El resultado se ordena de mayor a menor urgencia.
+
+    Args:
+        sintomas: Dict de sintomas normalizados.
+
+    Returns:
+        Lista de nombres de regla en orden de urgencia descendente.
+    """
+    compatibles: list[str] = []
+
+    for nombre, condiciones in _DEFINICION_REGLAS.items():
+        # Si la regla tiene al menos una condicion no-opcional, las opcionales
+        # neutrales se pueden omitir. Si son TODAS opcionales, se evaluan normalmente.
+        tiene_no_opcionales = any(c not in _CAMPOS_OPCIONALES for c, _ in condiciones)
+
+        match = True
+        for campo, valor in condiciones:
+            s_val = sintomas.get(campo)
+            if (campo in _CAMPOS_OPCIONALES
+                    and s_val == _NEUTRO_OPCIONAL.get(campo)
+                    and tiene_no_opcionales):
+                continue  # campo opcional sin reportar: no bloquea
+            if s_val != valor:
+                match = False
+                break
+        if match:
+            compatibles.append(nombre)
+
+    def _key_urgencia(nombre: str) -> int:
+        urgencia = _RESULTADOS.get(nombre, {}).get("urgencia", URGENCIA_BAJA)
+        return _PESO_URGENCIA.get(urgencia, 0)
+
+    compatibles.sort(key=_key_urgencia, reverse=True)
+    return compatibles
+
+
+# ===========================================================================
 # FUZZY SCORING (fallback cuando el engine no dispara ninguna regla)
 # ===========================================================================
 
 def _score_fuzzy(sintomas: dict) -> dict | None:
     """Aplica scoring difuso sobre todas las reglas definidas.
 
-    Para cada regla calcula el porcentaje de condiciones satisfechas.
-    Si alguna alcanza el umbral del 70%, la convierte en candidata.
-    Ordena candidatas por urgencia descendente y luego por confianza
-    descendente. Retorna el mejor candidato o None si ningun umbral se
-    supera.
+    Para cada regla calcula el porcentaje de condiciones satisfechas,
+    excluyendo del denominador las condiciones de campos opcionales (luces)
+    cuando el usuario reporta el valor neutro. Esto permite que reglas
+    con sintomas fisicos presentes sean candidatas aunque no se haya
+    reportado la luz del tablero.
+
+    Si alguna regla alcanza >= 70%, es candidata. Gana la de mayor urgencia;
+    en empate, la de mayor confianza.
 
     Args:
         sintomas: Dict de sintomas del vehiculo.
 
     Returns:
-        Dict de diagnostico completo o None si no hay candidatos >= 70%.
+        Dict de diagnostico completo o None si ningun umbral se supera.
     """
     _UMBRAL = 0.70
-    candidatos: list[tuple[int, float, str]] = []  # (peso_urgencia, confianza, nombre)
+    candidatos: list[tuple[int, float, str]] = []
 
     for nombre, condiciones in _DEFINICION_REGLAS.items():
-        if not condiciones:
+        # Si la regla tiene condiciones no-opcionales, excluir del denominador
+        # las opcionales que el usuario no reporto. Si todas son opcionales,
+        # evaluarlas normalmente (son la unica evidencia disponible).
+        tiene_no_opcionales = any(c not in _CAMPOS_OPCIONALES for c, _ in condiciones)
+        conds_activas = [
+            (c, v) for c, v in condiciones
+            if not (c in _CAMPOS_OPCIONALES
+                    and sintomas.get(c) == _NEUTRO_OPCIONAL.get(c)
+                    and tiene_no_opcionales)
+        ]
+        if not conds_activas:
             continue
-        matcheadas = sum(
-            1
-            for campo, valor in condiciones
-            if sintomas.get(campo) == valor
-        )
-        confianza = matcheadas / len(condiciones)
+
+        matcheadas = sum(1 for c, v in conds_activas if sintomas.get(c) == v)
+        confianza = matcheadas / len(conds_activas)
+
         if confianza >= _UMBRAL:
             urgencia = _RESULTADOS[nombre]["urgencia"]
             peso = _PESO_URGENCIA.get(urgencia, 0)
@@ -966,12 +1030,11 @@ def _score_fuzzy(sintomas: dict) -> dict | None:
     if not candidatos:
         return None
 
-    # Mayor urgencia primero; en empate, mayor confianza.
     candidatos.sort(key=lambda t: (t[0], t[1]), reverse=True)
     _peso, confianza, ganador = candidatos[0]
 
     resultado = _construir_resultado(ganador, [ganador])
-    resultado["_fuzzy"] = True          # marca interna para trazabilidad
+    resultado["_fuzzy"] = True
     resultado["_confianza"] = round(confianza * 100, 1)
     return resultado
 
@@ -981,17 +1044,7 @@ def _score_fuzzy(sintomas: dict) -> dict | None:
 # ===========================================================================
 
 def _diagnosticar_legado(sintomas: dict) -> dict:
-    """Ejecuta el motor legacy de modulos en cadena como fallback.
-
-    Importa los modulos de src/reglas/ en orden de prioridad y retorna
-    el primer diagnostico que aplique.
-
-    Args:
-        sintomas: Dict de sintomas del vehiculo.
-
-    Returns:
-        Dict de diagnostico completo.
-    """
+    """Ejecuta el motor legacy de modulos en cadena como fallback."""
     from src.reglas import (
         frenos,
         motor_combustion,
@@ -1016,42 +1069,25 @@ def diagnosticar(sintomas: dict) -> dict:
     """Ejecuta el motor de triage mecanico sobre el conjunto de sintomas.
 
     Flujo de ejecucion:
-      1. Si experta esta disponible, instancia TriageEngine, declara un
-         _Sintoma con los datos del input y corre el engine.
-      2. El engine dispara la regla de mayor salience cuyas condiciones
-         se satisfagan; esa regla declara un _Diagnostico.
-      3. Si el engine no produjo ningun _Diagnostico (ningun patron exacto),
-         se aplica el scoring fuzzy sobre _DEFINICION_REGLAS con umbral 70%.
+      1. Si experta esta disponible, instancia TriageEngine y lo ejecuta.
+         La regla de mayor salience cuyas condiciones se satisfagan gana.
+      2. Independientemente del resultado del engine, se evaluan TODAS las
+         reglas compatibles con los sintomas (via _encontrar_compatibles).
+         El campo reglas_disparadas contiene esta lista completa ordenada
+         por urgencia, para que el conductor vea todas las areas afectadas.
+      3. Si el engine no disparo, se aplica el scoring fuzzy (umbral 70%).
       4. Si tampoco hay candidato fuzzy, retorna el diagnostico normal.
       5. Si experta no esta instalado, cae al motor legado de modulos.
 
     Args:
-        sintomas: Dict con las siguientes claves (todas requeridas):
-            ruido (str): "ninguno" | "chirrido" | "golpeteo" | "zumbido"
-                | "crujido".
-            cuando_ruido (str): "ninguno" | "al_frenar" | "al_acelerar"
-                | "siempre" | "en_neutro" | "en_baches" | "al_girar".
-            humo (str): "ninguno" | "azul" | "blanco" | "negro".
-            vibracion (bool): True si hay vibracion perceptible.
-            donde_vibracion (str): "ninguna" | "volante" | "pedal_de_freno"
-                | "todo_el_auto".
-            temperatura (str): "normal" | "alta" | "muy_alta".
-            luces (str): "ninguna" | "temperatura" | "aceite" | "bateria"
-                | "check_engine".
-            comportamiento_freno (str): "normal" | "vibra" | "tarda_mas"
-                | "se_va_hacia_un_lado".
-            perdida_potencia (bool): True si hay perdida de potencia notoria.
-            liquido_piso (str): "ninguno" | "aceite" | "refrigerante".
+        sintomas: Dict con las claves: ruido, cuando_ruido, humo, vibracion,
+            donde_vibracion, temperatura, luces, comportamiento_freno,
+            perdida_potencia, liquido_piso.
 
     Returns:
-        Dict con las claves:
-            diagnostico (str): descripcion de la falla detectada.
-            urgencia (str): "critica" | "alta" | "moderada" | "baja".
-            seguro_manejar (str): "si" | "con_precaucion" | "no".
-            accion (str): recomendacion inmediata para el conductor.
-            reglas_disparadas (list[str]): nombres de reglas activadas.
-            sistema (str): "frenos" | "motor" | "refrigeracion" |
-                "transmision" | "suspension" | "electrico" | "ninguno".
+        Dict con: diagnostico, urgencia, seguro_manejar, accion,
+        reglas_disparadas (todas las compatibles, ordenadas por urgencia),
+        sistema.
     """
     if not _EXPERTA_DISPONIBLE:
         return _diagnosticar_legado(sintomas)
@@ -1068,23 +1104,23 @@ def diagnosticar(sintomas: dict) -> dict:
     engine.declare(_Sintoma(**s))
     engine.run()
 
-    # --- Recoger Diagnostico declarado ---
-    diagnostico_fact = None
-    reglas_disparadas: list[str] = []
-
+    # --- Recoger Diagnostico declarado (el de mayor salience) ---
+    diagnostico_ganador = None
     for fact in engine.facts.values():
         if isinstance(fact, _Diagnostico):
-            nombre = fact["nombre"]
-            reglas_disparadas.append(nombre)
-            if diagnostico_fact is None:
-                diagnostico_fact = nombre
+            if diagnostico_ganador is None:
+                diagnostico_ganador = fact["nombre"]
 
-    if diagnostico_fact is not None:
-        return _construir_resultado(diagnostico_fact, reglas_disparadas)
+    # --- Todas las reglas compatibles (para mostrar en tabla) ---
+    todas_compatibles = _encontrar_compatibles(s)
+
+    if diagnostico_ganador is not None:
+        return _construir_resultado(diagnostico_ganador, todas_compatibles)
 
     # --- Fallback fuzzy ---
     resultado_fuzzy = _score_fuzzy(s)
     if resultado_fuzzy is not None:
+        resultado_fuzzy["reglas_disparadas"] = todas_compatibles or resultado_fuzzy["reglas_disparadas"]
         return resultado_fuzzy
 
     return _DIAGNOSTICO_NORMAL.copy()
